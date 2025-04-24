@@ -2,67 +2,107 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Pré-Conferência de Prato</title>
+  <title>Comparador de Pratos - Câmera em Tempo Real</title>
   <style>
-    video, canvas {
-      width: 100%;
-      max-width: 400px;
+    video, img, canvas {
+      max-width: 100%;
       border-radius: 8px;
       margin-bottom: 10px;
     }
-    #colorBox {
+    .container {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      flex-direction: column;
+      gap: 10px;
     }
-    .color-sample {
-      width: 40px;
-      height: 40px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
+    #result {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f4f4f4;
+      border-radius: 6px;
     }
   </style>
 </head>
 <body>
-  <h2>Pré-Conferência Visual de Prato</h2>
-  <video id="video" autoplay></video>
-  <button onclick="captureImage()">Capturar Imagem</button>
-  <canvas id="canvas" style="display: none;"></canvas>
-  <div id="colorBox"></div>
+  <h2>Comparador de Pratos (Foto vs Câmera)</h2>
+  <div class="container">
+    <label>Imagem de Referência (Padrão):</label>
+    <input type="file" id="refInput" accept="image/*">
+    <img id="refImg" style="display: none;">
 
-  <script src="https://unpkg.com/color-thief-browser/dist/color-thief.umd.js"></script>
+    <label>Captura da Câmera:</label>
+    <video id="video" autoplay></video>
+    <button onclick="captureImage()">Capturar e Comparar</button>
+
+    <canvas id="canvas"></canvas>
+    <div id="result"></div>
+  </div>
+
   <script>
+    const refInput = document.getElementById('refInput');
+    const refImg = document.getElementById('refImg');
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const colorBox = document.getElementById('colorBox');
+    const result = document.getElementById('result');
 
-    // Acessa a câmera do celular
+    let refLoaded = false;
+
+    refInput.addEventListener('change', e => loadImg(e.target.files[0], refImg, () => refLoaded = true));
+
+    function loadImg(file, imgElement, callback) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        imgElement.src = reader.result;
+        imgElement.onload = () => {
+          imgElement.style.display = 'block';
+          if (callback) callback();
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => video.srcObject = stream)
       .catch(err => alert('Erro ao acessar a câmera: ' + err));
 
     function captureImage() {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const colorThief = new ColorThief();
-      const img = new Image();
-      img.src = canvas.toDataURL();
-      img.onload = () => {
-        const palette = colorThief.getPalette(img, 5);
-        showColors(palette);
-      };
-    }
+      if (!refLoaded) {
+        alert('Por favor, carregue a imagem de referência primeiro.');
+        return;
+      }
 
-    function showColors(colors) {
-      colorBox.innerHTML = '';
-      colors.forEach(color => {
-        const div = document.createElement('div');
-        div.className = 'color-sample';
-        div.style.backgroundColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-        colorBox.appendChild(div);
-      });
+      const width = 300;
+      const height = 300;
+      canvas.width = width;
+      canvas.height = height * 2;
+
+      // Desenha imagem de referência
+      ctx.drawImage(refImg, 0, 0, width, height);
+
+      // Desenha imagem da câmera
+      ctx.drawImage(video, 0, height, width, height);
+
+      const refData = ctx.getImageData(0, 0, width, height);
+      const camData = ctx.getImageData(0, height, width, height);
+
+      let diffCount = 0;
+      for (let i = 0; i < refData.data.length; i += 4) {
+        const r1 = refData.data[i];
+        const g1 = refData.data[i + 1];
+        const b1 = refData.data[i + 2];
+
+        const r2 = camData.data[i];
+        const g2 = camData.data[i + 1];
+        const b2 = camData.data[i + 2];
+
+        const diff = Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
+        if (diff > 60) diffCount++;
+      }
+
+      const totalPixels = refData.data.length / 4;
+      const similarity = 100 - ((diffCount / totalPixels) * 100);
+
+      result.innerHTML = `<strong>Similaridade estimada:</strong> ${similarity.toFixed(2)}%`;
     }
   </script>
 </body>
